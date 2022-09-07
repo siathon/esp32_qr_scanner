@@ -1261,6 +1261,14 @@ void prepare_for_update(){
     }
 }
 
+void abort_update(){
+    Update.abort();
+    start_scanner();
+    start_qr_loop();
+    update_timer = 0;
+    update_prepared = false;
+}
+
 void update(){
     Serial.print("POST /update\r\n");
     server.sendHeader("Connection", "close");
@@ -1281,9 +1289,7 @@ void upload(){
         Serial.printf("Update: %s\n", upload.filename.c_str());
         if (!Update.begin(UPDATE_SIZE_UNKNOWN)){ // start with max available size
             Update.printError(Serial);
-            start_scanner();
-            start_qr_loop();
-            update_timer = 0;
+            abort_update();
         }
         lv_label_set_text(status_label, "Updateing...");
         lv_timer_handler();
@@ -1292,9 +1298,7 @@ void upload(){
         /* flashing firmware to ESP*/
         if (Update.write(upload.buf, upload.currentSize) != upload.currentSize){
             Update.printError(Serial);
-            start_scanner();
-            start_qr_loop();
-            update_timer = 0;
+            abort_update();
         }else{
             char *buffer = (char*)malloc(20);
             sprintf(buffer, "Updateing: %d%%", Update.progress() * 100 / 1572864);
@@ -1307,16 +1311,14 @@ void upload(){
     else if (upload.status == UPLOAD_FILE_END){
         if (Update.end(true)){ // true to set the size to the current progress
             Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
-            lv_label_set_text(status_label, "Updateing: 100%%");
+            lv_label_set_text(status_label, "Updateing: 100%");
             lv_timer_handler();
         }
         else{
             Update.printError(Serial);
             lv_label_set_text(status_label, "Update failed");
             lv_timer_handler();
-            start_scanner();
-            start_qr_loop();
-            update_timer = 0;
+            abort_update();
         }
     }
 }
@@ -1790,8 +1792,6 @@ void loop(){
     }
     if (update_timer != 0 && millis() - update_timer > 5000){
         Serial.printf("Update timedout!\r\n");
-        start_scanner();
-        start_qr_loop();
-        update_timer = 0;
+        abort_update();
     }
 }

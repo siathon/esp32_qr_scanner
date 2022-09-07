@@ -18,7 +18,7 @@
 #define FORMAT_LITTLEFS_IF_FAILED true
 #define R 6371000.0
 
-float firmware_version = 0.2;
+float firmware_version = 0.3;
 
 char *zErrMsg;
 char *name = NULL;
@@ -37,6 +37,7 @@ int rad = -1;
 int time_window = -1;
 int time_offset = 0;
 int volume = 30;
+int rly_on_time = 1000;
 uint64_t main_timer = 0;
 uint64_t wifi_timer;
 uint64_t time_timer = 0;
@@ -56,6 +57,7 @@ bool relay_state = false;
 bool update_ip = true;
 bool update_prepared = false;
 bool ip_label_changed = false;
+bool rly_ctl_enabled = false;
 
 static const uint16_t screenWidth  = 128;
 static const uint16_t screenHeight = 64;
@@ -651,6 +653,8 @@ void set_config(){
     update_value<const char*>(config, data, keys, "gw");
     update_value<const char*>(config, data, keys, "dns");
     update_value<int>(config, data, keys, "volume");
+    update_value<bool>(config, data, keys, "relay");
+    update_value<int>(config, data, keys, "relay_on_time");
 
     if (!write_config(config)){
         start_scanner();
@@ -1251,7 +1255,7 @@ void restart(){
 
 void prepare_for_update(){
     update_prepared = true;
-    reader.end();
+    stop_scanner();
     if (qr_task != NULL){
       vTaskDelete(qr_task);
     }
@@ -1272,10 +1276,14 @@ void upload(){
         Serial.printf("Headers:\r\n");
     }
     HTTPUpload upload = server.upload();
+    update_timer = millis();
     if (upload.status == UPLOAD_FILE_START){
         Serial.printf("Update: %s\n", upload.filename.c_str());
         if (!Update.begin(UPDATE_SIZE_UNKNOWN)){ // start with max available size
             Update.printError(Serial);
+            start_scanner();
+            start_qr_loop();
+            update_timer = 0;
         }
         lv_label_set_text(status_label, "Updateing...");
         lv_timer_handler();
@@ -1284,6 +1292,9 @@ void upload(){
         /* flashing firmware to ESP*/
         if (Update.write(upload.buf, upload.currentSize) != upload.currentSize){
             Update.printError(Serial);
+            start_scanner();
+            start_qr_loop();
+            update_timer = 0;
         }else{
             char *buffer = (char*)malloc(20);
             sprintf(buffer, "Updateing: %d%%", Update.progress() * 100 / 1572864);
@@ -1301,8 +1312,11 @@ void upload(){
         }
         else{
             Update.printError(Serial);
-            lv_label_set_text(status_label, "Updatefailed");
+            lv_label_set_text(status_label, "Update failed");
             lv_timer_handler();
+            start_scanner();
+            start_qr_loop();
+            update_timer = 0;
         }
     }
 }
@@ -1415,6 +1429,15 @@ void load_config(){
         volume = config["volume"].as<int>();
         Serial.printf("Volume: %d\r\n", volume);
     }
+
+    if (config.containsKey("relay") && config["relay"].as<bool>()){
+        rly_ctl_enabled = true;
+        if (config.containsKey("relay_on_time") && config["relay_on_time"].as<int>() != 0){
+            rly_on_time = config["relay_on_time"].as<int>();
+        }
+        Serial.printf("Relay on time: %d\r\n", rly_on_time);
+    }
+    
 }
 
 void init_player(){
@@ -1514,6 +1537,10 @@ void stop_scanner(){
     while(!reader.paused){
         delay(10);
     }
+}
+
+void start_qr_loop(){
+    xTaskCreatePinnedToCore(qr_loop, "QRloop", 4096, NULL, 1, &qr_task, 0);
 }
 
 int parse_command(const char *payload){
@@ -1641,7 +1668,10 @@ int parse_entry_event(const char *payload){
         char *name = (char*)malloc(55);
         get_user_name(event["id"].as<uint16_t>(), name);
         update_result(name);
+        digitalWrite(relay_pin, HIGH);
         player.play(8);
+        lcd_delay(rly_on_time);
+        digitalWrite(relay_pin, LOW);
         return 0;
     }
     else if (rc == SQLITE_CONSTRAINT_FOREIGNKEY){
@@ -1757,5 +1787,11 @@ void loop(){
         main_timer = millis();
         check_wifi();
         ntp_update();
+    }
+    if (update_timer != 0 && millis() - update_timer > 5000){
+        Serial.printf("Update timedout!\r\n");
+        start_scanner();
+        start_qr_loop();
+        update_timer = 0;
     }
 }

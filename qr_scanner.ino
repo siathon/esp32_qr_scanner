@@ -13,17 +13,19 @@
 #include <Adafruit_SSD1306.h>
 #include <Regexp.h>
 #include <lvgl.h>
+#include <Update.h>
 
 #define FORMAT_LITTLEFS_IF_FAILED true
 #define R 6371000.0
 
-float firmware_version = 0.1;
+float firmware_version = 0.2;
 
 char *zErrMsg;
 char *name = NULL;
 char *wifi_ssid = NULL;
 char *wifi_pass = NULL;
 char *ntp_server = NULL;
+char *ip_label_text = NULL;
 
 IPAddress ip;
 IPAddress net_mask;
@@ -35,7 +37,10 @@ int rad = -1;
 int time_window = -1;
 int time_offset = 0;
 int volume = 30;
-uint64_t main_timer = 0, wifi_timer, time_timer = 0;
+uint64_t main_timer = 0;
+uint64_t wifi_timer;
+uint64_t time_timer = 0;
+uint64_t update_timer = 0;
 int relay_pin = 2;
 
 bool wifi_connecting = false;
@@ -49,6 +54,8 @@ bool dhcp = true;
 bool update_rtc_via_ntp = false;
 bool relay_state = false;
 bool update_ip = true;
+bool update_prepared = false;
+bool ip_label_changed = false;
 
 static const uint16_t screenWidth  = 128;
 static const uint16_t screenHeight = 64;
@@ -70,6 +77,8 @@ lv_obj_t *time_label;
 lv_obj_t *ip_label;
 lv_obj_t *status_label;
 lv_obj_t *result_label;
+
+TaskHandle_t qr_task;
 
 #if LV_USE_LOG != 0
 void my_print(const char * buf){
@@ -183,7 +192,8 @@ void init_display(){
         ip_label = lv_label_create(lv_scr_act());
         lv_obj_set_pos(ip_label, 5, 14);
         lv_obj_set_style_text_font(ip_label, &lv_font_montserrat_14, 0);
-        lv_label_set_text(ip_label, "IP: Not connected");
+        ip_label_text = (char*)malloc(25);
+        lv_label_set_text(ip_label, "IP:Not connected");
 
         status_label = lv_label_create(lv_scr_act());
         lv_obj_set_pos(status_label, 3, 53);
@@ -198,7 +208,7 @@ void init_display(){
         lv_obj_set_style_base_dir(result_label, LV_BASE_DIR_RTL, 0);
         lv_label_set_long_mode(result_label, LV_LABEL_LONG_SCROLL);
         lv_label_set_text(result_label, "");
-
+        lv_timer_handler();
         display_available = true;
     }else{
         Serial.print(F("Failed\r\n"));
@@ -503,9 +513,8 @@ void check_wifi(){
         // Serial.print(F("connected\r\n"));
         if (update_ip){
             update_ip = false;
-            char *buffer = (char*)malloc(25);
-            sprintf(buffer, "IP: %s", WiFi.localIP().toString());
-            lv_label_set_text(ip_label, buffer);
+            sprintf(ip_label_text, "IP: %s", WiFi.localIP().toString());
+            ip_label_changed = true;
         }
         wifi_connecting = false;
         if (!webserver_started){
@@ -524,8 +533,12 @@ void check_wifi(){
         if (millis() - wifi_timer > 10000){
             wifi_connecting = false;
             Serial.print(F("connection timeout\r\n"));
+            sprintf(ip_label_text, "IP:Timedout");
+            ip_label_changed = true;
         }else{
             Serial.print(F("connecting\r\n"));
+            sprintf(ip_label_text, "IP:Connecting");
+            ip_label_changed = true;
             return;
         }
     }
@@ -534,6 +547,8 @@ void check_wifi(){
     wifi_connecting = true;
     wifi_timer = millis();
     Serial.print(F("reconnecting\r\n"));
+    sprintf(ip_label_text, "IP:Connecting");
+    ip_label_changed = true;
     return;
 }
 
@@ -1228,9 +1243,68 @@ void get_events(){
 }
 
 void restart(){
+    Serial.print("GET /restart\r\n");
     server.send(200, "text/plain", "Done");
     delay(1000);
     esp_restart();
+}
+
+void prepare_for_update(){
+    update_prepared = true;
+    reader.end();
+    if (qr_task != NULL){
+      vTaskDelete(qr_task);
+    }
+}
+
+void update(){
+    Serial.print("POST /update\r\n");
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    delay(1000);
+    ESP.restart();
+}
+
+void upload(){
+    // Serial.print("POST(upload) /update\r\n");
+    if (!update_prepared){
+        prepare_for_update();
+        Serial.printf("Headers:\r\n");
+    }
+    HTTPUpload upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START){
+        Serial.printf("Update: %s\n", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)){ // start with max available size
+            Update.printError(Serial);
+        }
+        lv_label_set_text(status_label, "Updateing...");
+        lv_timer_handler();
+    }
+    else if (upload.status == UPLOAD_FILE_WRITE){
+        /* flashing firmware to ESP*/
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize){
+            Update.printError(Serial);
+        }else{
+            char *buffer = (char*)malloc(20);
+            sprintf(buffer, "Updateing: %d%%", Update.progress() * 100 / 1572864);
+            Serial.println(buffer);
+            lv_label_set_text(status_label, buffer);
+            lv_timer_handler();
+            free(buffer);
+        }
+    }
+    else if (upload.status == UPLOAD_FILE_END){
+        if (Update.end(true)){ // true to set the size to the current progress
+            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+            lv_label_set_text(status_label, "Updateing: 100%%");
+            lv_timer_handler();
+        }
+        else{
+            Update.printError(Serial);
+            lv_label_set_text(status_label, "Updatefailed");
+            lv_timer_handler();
+        }
+    }
 }
 
 void init_webserver(){
@@ -1249,7 +1323,7 @@ void init_webserver(){
     server.on("/delete_users", HTTP_DELETE, del_users);
     server.on("/delete_all_users", HTTP_DELETE, del_all_users);
     server.on("/delete_all_events", HTTP_DELETE, del_all_events);
-    server.on("/generate_events", populate_events);
+    server.on("/update", HTTP_POST, update, upload);
     server.begin();
     webserver_started = true;
 }
@@ -1590,33 +1664,6 @@ int parse_entry_event(const char *payload){
     }
 }
 
-void populate_events(){
-    for (size_t i = 0; i < 1000; i++){
-        uint32_t ts = 1660985137 + i;
-        char *query = (char*)malloc(25480);
-        sprintf(query, "INSERT INTO events VALUES ");
-        for (size_t j = 0; j < 100; j++){
-            uint16_t id = 64536 + j;
-            char *buffer = (char*)malloc(25);
-            sprintf(buffer, "(%u,%d,1),", ts, id);
-            strcat(query, buffer);
-            free(buffer);
-        }
-        query[strlen(query) - 1] = ';';
-        Serial.printf("%s...", query);
-        stop_scanner();
-        int rc = sqlite3_exec(db, query, NULL, NULL, &zErrMsg);
-        start_scanner();
-        if (rc != SQLITE_OK){
-            Serial.printf("SQL error: %s\r\n", zErrMsg);
-            break;
-        }
-        Serial.print(F("Done\r\n"));
-        free(query);
-    }
-    server.send(200);
-}
-
 void show_time(){
     char buffer[25];
     if (ntp_enabled){
@@ -1647,12 +1694,12 @@ void setup(){
     Serial.begin(115200);
     Serial.printf("Reset reason: ");
     print_reset_reason();
+    Serial.printf("Firmware version: %3.1f\r\n", firmware_version);
     Serial1.begin(9600, 134217756U, 4, 14);
     Wire.begin(13, 15);
     pinMode(relay_pin, OUTPUT);
     digitalWrite(relay_pin, LOW);
     init_display();
-    lv_timer_handler();
     init_fs();
     load_config();
     init_db();
@@ -1660,9 +1707,7 @@ void setup(){
     init_time();
     init_player();
     init_qr_scanner();
-    TaskHandle_t qr_task;
     xTaskCreatePinnedToCore(qr_loop, "QRloop", 4096, NULL, 1, &qr_task, 0);
-    update_status("Ready");
     Serial.printf("memory: %u - %u\r\n", ESP.getFreeHeap(), ESP.getFreePsram());
 }
 
@@ -1674,6 +1719,7 @@ void lcd_delay(uint32_t ms){
 }
 
 void qr_loop(void *parameter){
+    update_status("Ready");
     while (true){
         if(reader.receiveQrCode(&qr_code_data, 1)){
             update_status("Proccessing");
@@ -1694,6 +1740,10 @@ void qr_loop(void *parameter){
         if (millis() - time_timer > 1000){
             time_timer = millis();
             show_time();
+        }
+        if(ip_label_changed){
+            ip_label_changed = false;
+            lv_label_set_text(ip_label, ip_label_text);
         }
         lv_timer_handler();
     }

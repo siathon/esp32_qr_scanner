@@ -129,8 +129,8 @@ void print_reset_reason(){
 }
 
 static int select_users_callback(void *data, int argc, char **argv, char **col_name){
-    char *buffer = (char*)malloc(65);
-    sprintf(buffer, "[%s,\"%s\"],", argv[0], argv[1]);
+    char *buffer = (char*)malloc(75);
+    sprintf(buffer, "{\"id\":%s,\"name\":\"%s\"},", argv[0], argv[1]);
     strcat((char*)data, buffer);
     free(buffer);
     return 0;
@@ -732,11 +732,11 @@ void add_user(){
         return;
     }
     int id = data["id"].as<int>();
-    if (id <= 0 || id > 65535){
+    if (id <= 0 || id > 255){
         start_scanner();
         data.clear();
         data["result"] = false;
-        data["msg"] = "User id not valid, id must be integer and in range [1, 65535]";
+        data["msg"] = "User id not valid, id must be integer and in range [1, 255]";
         serializeJsonPretty(data, body);
         Serial.printf("Response 5: %s\r\n", body.c_str());
         server.send(400, "application/json", body);
@@ -795,7 +795,7 @@ void add_user(){
 
 void add_users(){
     Serial.print(F("POST /add_users\r\n"));
-    DynamicJsonDocument data(16384);
+    DynamicJsonDocument data(12288);
     String body;
 
     char *buffer = (char*)malloc(10);
@@ -851,7 +851,7 @@ void add_users(){
     bool users_valid = true;
     JsonVariant invalid_user;
     for (JsonVariant user: users){
-        if (!user["id"].as<int>() || user["id"].as<int>() > 65535 || strlen(user["name"].as<const char *>()) > 50 || strlen(user["name"].as<const char *>()) == 0){
+        if (!user["id"].as<int>() || user["id"].as<int>() > 255 || strlen(user["name"].as<const char *>()) > 50 || strlen(user["name"].as<const char *>()) == 0){
             users_valid = false;
             invalid_user = user;
             break;
@@ -909,7 +909,7 @@ void add_users(){
 
 void get_users(){
     Serial.print(F("GET /get_users\r\n"));
-    char *data = (char*)malloc(7700);
+    char *data = (char*)malloc(7500);
     stop_scanner();
     select_users(data, false, (char*)"");
     start_scanner();
@@ -952,8 +952,8 @@ void del_user(){
         server.send(400, "application/json", body);
         return;
     }
-    char *result = (char*)malloc(65);
-    char *filter = (char*)malloc(20);
+    char *result = (char*)malloc(75);
+    char *filter = (char*)malloc(10);
     sprintf(filter, "id=%d", id);
     stop_scanner();
     select_users(result, true, filter);
@@ -995,7 +995,7 @@ void del_user(){
 
 void del_users(){
     Serial.print(F("POST /delete_users\r\n"));
-    DynamicJsonDocument data(16384);
+    DynamicJsonDocument data(2048);
     String body;
     if(!get_request_data(data)){
         data["result"] = false;
@@ -1209,7 +1209,6 @@ void del_all_events(){
 
 void get_events(){
     Serial.print(F("POST /get_events\r\n"));
-    Serial.printf("memory: %u - %u\r\n", ESP.getFreeHeap(), ESP.getFreePsram());
     DynamicJsonDocument data(128);
     String body;
     get_request_data(data);
@@ -1219,7 +1218,7 @@ void get_events(){
     if (data.containsKey("offset")){
         offset = data["offset"].as<int>();
     }
-    char *response = (char*)malloc(21504);
+    char *response = (char*)malloc(24000);
     int rc;
     stop_scanner();
     if (data.containsKey("from") && data.containsKey("to")){

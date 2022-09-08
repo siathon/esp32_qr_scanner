@@ -1,0 +1,466 @@
+openapi: 3.0.0
+servers: [
+    url: ""
+  ]
+info:
+  description: QR Scanner API
+  version: "1.0.0"
+  title: QR Scanner API
+  contact:
+    email: siavash@saymantech.com
+  license:
+    name: Apache 2.0
+    url: 'http://www.apache.org/licenses/LICENSE-2.0.html'
+  
+paths:
+  /restart:
+    get:
+      description: Restart device
+      responses:
+        '200':
+          description: device restarted successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Done
+  /get_config:
+    get:
+      description: Get device's current config
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+  /get_users:
+    get:
+      description: Get list of users
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: User ID
+                    name:
+                      type: string
+                example: [{"id":100,"name":"محمد نوری"},{"id":101,"name":"علی کشاورز"}]
+  /get_time:
+    get:
+      description: Get device time
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ts:
+                    type: integer
+                    description: timestamp(UTC) without offset
+                    example: 1661337823
+                  offset:
+                    type: integer
+                    example: 16200
+                    description: timezone offset
+  /get_user_count:
+    get:
+      description: Get User count
+      responses:
+        '200':
+          description: success
+          content:
+            text/plain:
+              schema:
+                type: integer
+                example: 10
+  /get_event_count:
+    get:
+      description: Get Event count
+      responses:
+        '200':
+          description: success
+          content:
+            text/plain:
+              schema:
+                type: integer
+                example: 100
+  /get_events:
+    get:
+      description: get events(limit 1000)
+      parameters: 
+      - in: query
+        name: from
+        schema:
+          type: integer
+        description: incluseive timestamp
+        required: false
+      - in: query
+        name: to
+        schema:
+          type: integer
+        description: incluseive timestamp
+        required: false
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: number of events to skip
+        required: false
+      responses:
+        '200':
+          description: return list of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: User ID
+                    status:
+                      type: integer
+                      description: event status
+                    ts:
+                      type: integer
+                      description: event time stamp
+                example: [{"id":100,"status":1, "ts":1662619071},{"id":101,"status":1, "ts":1662619090}]
+        '400':
+          description: failure
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: failure reason
+                example: Database error
+  /set_config:
+    post:
+      description: edit device configuration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object 
+              properties:
+                  name:
+                    type: string
+                    description: device name
+                  ssid:
+                    type: string
+                    description: WiFi SSID
+                  pass:
+                    type: string
+                    description: WiFi Password
+                  lat:
+                    type: number
+                    example: 45.365825
+                  lon:
+                    type: number
+                    example: 34.256987
+                  rad:
+                    type: integer
+                    example: 10
+                    description: location radius
+                  time_window:
+                    type: integer
+                    description: scan time window after QRCode generation
+                    example: 10
+                  ntp:
+                    type: boolean
+                  ntp_server:
+                    type: string
+                    example: "1.asia.pool.ntp.org"
+                  time_offset:
+                    type: integer
+                    example: 16200
+                    description: timezone offet in seconds
+                  dhcp:
+                    type: boolean
+                    description: enable/disable DHCP
+                  ip:
+                    type: string
+                    example: "192.168.1.2"
+                  mask:
+                    type: string
+                    example: "255.255.255.0"
+                  gw:
+                    type: string
+                    description: default gateway
+                    example: "192.168.1.1"
+                  dns:
+                    type: string
+                    example: "8.8.8.8"
+                  volume:
+                    type: integer
+                    description: speaker volume(0-30)
+                    example: 10
+                  relay:
+                    type: boolean
+                    description: enable/disable relay control
+                  relay_on_time:
+                    type: integer
+                    description: Relay ON time in ms
+                    example: 1000
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    example: true
+                  msg:
+                    type: string
+                    example: "config saved successfully"
+                  proccessed_keys:
+                    type: array
+                    items:
+                      type: string
+                      example: "ssid"
+                    description: array of accepted configuration parameters
+        '400':
+          description: failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                    result:
+                      type: boolean
+                      example: false
+                    msg:
+                      type: string
+                      example: "Failure reason"
+  /set_time:
+    post:
+      description: set device time(UTC)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object 
+              properties:
+                  ts:
+                    type: integer
+                    description: timestamp
+                    example: 1661335634
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    example: true
+                  msg:
+                    type: string
+                    example: "time set successfully"
+        '400':
+          description: failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                    result:
+                      type: boolean
+                      example: false
+                    msg:
+                      type: string
+                      example: "Failure reason"
+  /add_user:
+    post:
+      description: Add new user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object 
+              properties:
+                  id:
+                    type: integer
+                    description: user id(1-255)
+                    example: 1
+                  name:
+                    type: string
+                    description: user name
+                    example: "محمد نوری"
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    example: true
+                  msg:
+                    type: string
+                    example: "User added successfully"
+        '400':
+          description: failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                    result:
+                      type: boolean
+                      example: false
+                    msg:
+                      type: string
+                      example: "Failure reason"
+  /add_users:
+    post:
+      description: Add multiple new users
+      requestBody:
+        content:
+          application/json:
+           schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: User ID
+                    name:
+                      type: string
+                example: [{"id":100,"name":"محمد نوری"},{"id":101,"name":"علی کشاورز"}]
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    example: true
+                  msg:
+                    type: string
+                    example: "Users added successfully"
+        '400':
+          description: failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                    result:
+                      type: boolean
+                      example: false
+                    msg:
+                      type: string
+                      example: "Failure reason"
+  /delete_user:
+    delete:
+      description: delete user, All events of the user will be deleted
+      parameters: 
+      - in: query
+        name: id
+        schema:
+          type: integer
+        required: true
+
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    example: true
+                  msg:
+                    type: string
+                    example: "User deleted successfully"
+        '400':
+          description: failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                    result:
+                      type: boolean
+                      example: false
+                    msg:
+                      type: string
+                      example: "Failure reason"   
+  /delete_users:
+    delete:
+      description: delete multiple users, all events of all users will be deleted
+      parameters: 
+      - in: query
+        name: ids
+        schema:
+          type: array
+          items:
+            type: integer
+        required: true
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    example: true
+                  msg:
+                    type: string
+                    example: "Users deleted successfully"
+        '400':
+          description: failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                    result:
+                      type: boolean
+                      example: false
+                    msg:
+                      type: string
+                      example: "Failure reason"
+  /delete_all_users:
+    delete:
+      description: Delete all users
+      responses:
+        '200':
+          description: success
+        '400':
+          description: failure
+  /delete_all_events:
+    delete:
+      description: Delete all events
+      responses:
+        '200':
+          description: success
+        '400':
+          description: failure

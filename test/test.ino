@@ -12,6 +12,7 @@
 char *zErrMsg;
 sqlite3 *db;
 ESP32Time rtc;
+int relay_pin = 2;
 
 static const uint16_t screenWidth  = 128;
 static const uint16_t screenHeight = 64;
@@ -187,13 +188,12 @@ void test_lcd_lvgl(){
 
 void setup(){
     Serial.begin(115200);
-    
-    init_fs();
-    init_db();
-    insert(2, "سیاوش ملایی");
-    delay(100);
-    select();
+    pinMode(relay_pin, OUTPUT);
 }
 
 void loop(){
+    digitalWrite(relay_pin, HIGH);
+    delay(1000);
+    digitalWrite(relay_pin, LOW);
+    delay(1000);
 }

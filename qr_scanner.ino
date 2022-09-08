@@ -137,8 +137,8 @@ static int select_users_callback(void *data, int argc, char **argv, char **col_n
 }
 
 static int select_events_callback(void *data, int argc, char **argv, char **col_name){
-    char *buffer = (char*)malloc(25);
-    sprintf(buffer, "[%s,%s,%s],", argv[0], argv[1], argv[2]);
+    char *buffer = (char*)malloc(45);
+    sprintf(buffer, "{\"ts\":%s,\"id\":%s,\"status\":%s},", argv[0], argv[1], argv[2]);
     strcat((char*)data, buffer);
     free(buffer);
     return 0;
@@ -275,8 +275,8 @@ int init_db(){
     }
     Serial.print(F("Done\r\n"));
 
-    Serial.print(F("CREATE TABLE IF NOT EXISTS events (ts INTEGER, id INTEGER, status INTEGER, PRIMARY KEY(ts, id), FOREIGN KEY (id) REFERENCES users (id));"));
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS events (ts INTEGER, id INTEGER, status INTEGER, PRIMARY KEY(ts, id), FOREIGN KEY (id) REFERENCES users (id));",NULL, NULL, &zErrMsg);
+    Serial.print(F("CREATE TABLE IF NOT EXISTS events (ts INTEGER, id INTEGER, status INTEGER, PRIMARY KEY(ts, id), FOREIGN KEY (id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE);"));
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS events (ts INTEGER, id INTEGER, status INTEGER, PRIMARY KEY(ts, id), FOREIGN KEY (id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE);",NULL, NULL, &zErrMsg);
     if (rc != SQLITE_OK){
         Serial.printf("SQL error: %s\r\n", zErrMsg);
         sqlite3_free(zErrMsg);
@@ -837,17 +837,8 @@ void add_users(){
     }
     serializeJsonPretty(data, Serial);
     Serial.print("\r\n");
-    if (!data.containsKey("users")){
-        start_scanner();
-        data.clear();
-        data["result"] = false;
-        data["msg"] = "User list not specified";
-        serializeJsonPretty(data, body);
-        Serial.printf("Response: %s\r\n", body.c_str());
-        server.send(400, "application/json", body);
-        return;
-    }
-    JsonArray users = data["users"].as<JsonArray>();
+
+    JsonArray users = data.as<JsonArray>();
     bool users_valid = true;
     JsonVariant invalid_user;
     for (JsonVariant user: users){
@@ -1088,7 +1079,6 @@ void get_time(){
     Serial.printf("Response: %s\r\n", data);
     server.send_P(200, "application/json", data);
     free(data);
-    reader.debug = !reader.debug;
 }
 
 void ntp_update(){
@@ -1218,7 +1208,7 @@ void get_events(){
     if (data.containsKey("offset")){
         offset = data["offset"].as<int>();
     }
-    char *response = (char*)malloc(24000);
+    char *response = (char*)malloc(40960);
     int rc;
     stop_scanner();
     if (data.containsKey("from") && data.containsKey("to")){

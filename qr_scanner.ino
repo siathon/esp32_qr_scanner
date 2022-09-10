@@ -191,6 +191,14 @@ void init_display(){
         lv_label_set_text(time_label, "");
         lv_obj_set_style_text_font(time_label, &lv_font_unscii_8, 0);
 
+        lv_obj_t *label = lv_label_create(lv_scr_act());
+        lv_obj_set_pos(label, 80, 0);
+        char *buffer = (char*)malloc(10);
+        lv_obj_set_style_text_font(label, &lv_font_unscii_8, 0);
+        sprintf(buffer, "fw:%3.1f", firmware_version);
+        lv_label_set_text(label, buffer);
+        free(buffer);
+
         ip_label = lv_label_create(lv_scr_act());
         lv_obj_set_pos(ip_label, 5, 14);
         lv_obj_set_style_text_font(ip_label, &lv_font_montserrat_14, 0);

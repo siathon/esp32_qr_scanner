@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>QRCode</title>
+    <script>
+        function generate() {
+            let id = document.getElementById("id").value;
+            let st = document.getElementById("st").value;
+            let lat = document.getElementById("lat").value;
+            let lon = document.getElementById("lon").value;
+            let data = JSON.stringify({"id":id, "lat":lat, "lon":lon, "st":st, "ts":Math.floor(Date.now() / 1000) + 16200});
+            document.getElementById("out").innerHTML = data
+            console.log(data);
+            let url = 'https://api.qrserver.com/v1/create-qr-code/?data=' + data + '&size=300x300';
+            console.log(url);
+            document.getElementById("qr").src = encodeURI(url);
+        }
+        function generate_restart(){
+            let url = 'https://api.qrserver.com/v1/create-qr-code/?data=%23%23%23restart%23%23%23&size=300x300';
+            console.log(url);
+            document.getElementById("qr").src = url;
+        }
+        function generate_reset(){
+            let url = 'https://api.qrserver.com/v1/create-qr-code/?data=%23%23%23reset%23%23%23&size=300x300';
+            console.log(url);
+            document.getElementById("qr").src = url;
+        }
+    </script>
+</head>
+<body>
+    <label for="id">ID: </label>
+    <input type="number" name="id" id="id" min="1" max="1000" value="1">
+    <br>
+    <label for="st">Status</label>
+    <input type="number" name="st" id="st", min="1" max="255" value="1">
+    <br>
+    <label for="lat">Lat</label>
+    <input type="number" name="lat" id="lat" step=0.000001 value="38.067463">
+    <br>
+    <label for="lon">Lon</label>
+    <input type="number" name="lon" id="lon" step=0.000001 value="46.308289">
+    <br>
+    <button onclick="generate();">generate</button>
+    <button onclick="generate_restart();">restart</button>
+    <button onclick="generate_reset();">reset factory</button>
+    <br>
+    <label id="out"></label>
+    <br>
+    <center><img id="qr" src="https://api.qrserver.com/v1/create-qr-code/?data=HelloWorld&amp;size=300x300" alt="" width="300" height="300"></center>
+</body>
+</html>

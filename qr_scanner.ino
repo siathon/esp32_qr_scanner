@@ -18,7 +18,7 @@
 #define FORMAT_LITTLEFS_IF_FAILED true
 #define R 6371000.0
 
-float firmware_version = 0.3;
+float firmware_version = 0.4;
 
 char *zErrMsg;
 char *name = NULL;
@@ -782,7 +782,7 @@ void add_user(){
     if (rc != 0){
         data.clear();
         data["result"] = false;
-        if(rc == SQLITE_CONSTRAINT_UNIQUE){
+        if(rc == SQLITE_CONSTRAINT_PRIMARYKEY){
             data["msg"] = "User exists";
         }
         else{
@@ -887,11 +887,11 @@ void add_users(){
     if (rc != 0){
         data.clear();
         data["result"] = false;
-        if(rc == SQLITE_CONSTRAINT_UNIQUE){
+        if(rc == SQLITE_CONSTRAINT_PRIMARYKEY){
             data["msg"] = "one or more of the Users exists, no users added";
         }
         else{
-            data["msg"] = "Failed to add user";
+            data["msg"] = "Failed to add users";
         }
         serializeJsonPretty(data, body);
         Serial.printf("Response: %s\r\n", body.c_str());
@@ -1667,10 +1667,12 @@ int parse_entry_event(const char *payload){
         char *name = (char*)malloc(55);
         get_user_name(event["id"].as<uint16_t>(), name);
         update_result(name);
-        digitalWrite(relay_pin, HIGH);
         player.play(8);
-        lcd_delay(rly_on_time);
-        digitalWrite(relay_pin, LOW);
+        if (rly_ctl_enabled){
+            digitalWrite(relay_pin, HIGH);
+            lcd_delay(rly_on_time);
+            digitalWrite(relay_pin, LOW);
+        }
         return 0;
     }
     else if (rc == SQLITE_CONSTRAINT_FOREIGNKEY){

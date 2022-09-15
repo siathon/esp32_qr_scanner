@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>QRCode</title>
+    <script>
+        function generate_ssid() {
+            ssid = document.getElementById("ssid").value
+            pass = document.getElementById('pass').value
+            let url = 'https://api.qrserver.com/v1/create-qr-code/?data=' + 'WIFI:S:' + ssid + ';T:WPA;P:' + pass + ';;' + '&size=300x300';
+            console.log(url);
+            document.getElementById("qr").src = url;
+        }
+    </script>
+</head>
+<body>
+    <label for="ssid">SSID: </label>
+    <input type="text" name="ssid" id="ssid">
+    <br>
+    <label for="pass">PASS</label>
+    <input type="text" name="pass" id="pass">
+    <br>
+    <button onclick="generate_ssid();">SSID</button>
+    <center><img id="qr" src="https://api.qrserver.com/v1/create-qr-code/?data=HelloWorld&amp;size=300x300" alt="" width="300" height="300"></center>
+</body>
+</html>

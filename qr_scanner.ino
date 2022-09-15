@@ -14,11 +14,12 @@
 #include <Regexp.h>
 #include <lvgl.h>
 #include <Update.h>
+#include <esp_task_wdt.h>
 
 #define FORMAT_LITTLEFS_IF_FAILED true
 #define R 6371000.0
 
-float firmware_version = 0.4;
+float firmware_version = 0.6;
 
 char *zErrMsg;
 char *name = NULL;
@@ -129,7 +130,7 @@ void print_reset_reason(){
 }
 
 static int select_users_callback(void *data, int argc, char **argv, char **col_name){
-    char *buffer = (char*)malloc(75);
+    char *buffer = (char*)malloc(100);
     sprintf(buffer, "{\"id\":%s,\"name\":\"%s\"},", argv[0], argv[1]);
     strcat((char*)data, buffer);
     free(buffer);
@@ -295,10 +296,10 @@ int init_db(){
 }
 
 int insert_users(JsonArray &users){
-    char *query = (char*)malloc(30 + users.size() * 65);
+    char *query = (char*)malloc(30 + users.size() * 90);
     sprintf(query, "INSERT INTO users VALUES");
     for (JsonVariant user: users){
-        char *buffer = (char*)malloc(60);
+        char *buffer = (char*)malloc(85);
         sprintf(buffer, "(%d,'%s'),", user["id"].as<int>(), user["name"].as<const char*>()); 
         strcat(query, buffer);
     }
@@ -686,7 +687,7 @@ void set_config(){
 
 void add_user(){
     Serial.print(F("POST /add_user\r\n"));
-    DynamicJsonDocument data(128);
+    DynamicJsonDocument data(256);
     String body;
 
     char *buffer = (char*)malloc(10);
@@ -762,7 +763,7 @@ void add_user(){
         return;
     }
 
-    if (strlen(data["name"].as<const char*>()) > 50){
+    if (strlen(data["name"].as<const char*>()) > 100){
         start_scanner();
         data.clear();
         data["result"] = false;
@@ -772,7 +773,7 @@ void add_user(){
         server.send(400, "application/json", body);
         return;
     }
-    StaticJsonDocument<128> doc;
+    StaticJsonDocument<256> doc;
     JsonArray users = doc.to<JsonArray>();
     users.add(data);
     serializeJson(users, Serial);
@@ -803,7 +804,7 @@ void add_user(){
 
 void add_users(){
     Serial.print(F("POST /add_users\r\n"));
-    DynamicJsonDocument data(12288);
+    DynamicJsonDocument data(16384);
     String body;
 
     char *buffer = (char*)malloc(10);
@@ -850,7 +851,7 @@ void add_users(){
     bool users_valid = true;
     JsonVariant invalid_user;
     for (JsonVariant user: users){
-        if (!user["id"].as<int>() || user["id"].as<int>() > 255 || strlen(user["name"].as<const char *>()) > 50 || strlen(user["name"].as<const char *>()) == 0){
+        if (!user["id"].as<int>() || user["id"].as<int>() > 255 || strlen(user["name"].as<const char *>()) > 100 || strlen(user["name"].as<const char *>()) == 0){
             users_valid = false;
             invalid_user = user;
             break;
@@ -908,7 +909,7 @@ void add_users(){
 
 void get_users(){
     Serial.print(F("GET /get_users\r\n"));
-    char *data = (char*)malloc(7500);
+    char *data = (char*)malloc(12500);
     stop_scanner();
     select_users(data, false, (char*)"");
     start_scanner();
@@ -1254,7 +1255,9 @@ void prepare_for_update(){
     update_prepared = true;
     stop_scanner();
     if (qr_task != NULL){
-      vTaskDelete(qr_task);
+        esp_task_wdt_delete(qr_task);
+        esp_task_wdt_deinit();
+        vTaskDelete(qr_task);
     }
 }
 
@@ -1320,6 +1323,28 @@ void upload(){
     }
 }
 
+void generate_events(){
+    char *query = (char*)malloc(43008);
+    sprintf(query, "INSERT INTO events VALUES ");
+    char *buffer = (char*)malloc(25);
+    for (size_t i = 0; i < 2000; i++){
+        sprintf(buffer, "(%u,%d,%d),", 1663228397 + i, 100, 100);
+        strcat(query, buffer);
+    }
+    query[strlen(query)-1] = ';';
+    free(buffer);
+    // Serial.printf("%s...", query);
+    int rc = sqlite3_exec(db, query, NULL, NULL, &zErrMsg);
+    free(query);
+    if (rc != SQLITE_OK){
+        Serial.printf("SQL error: %s\r\n", zErrMsg);
+        server.send(200+strtol(zErrMsg, NULL, 10), "text/plain", "Failed");
+        return;
+    }
+    Serial.print(F("Done\r\n"));
+    server.send(200, "text/plain", "Done");
+}
+
 void init_webserver(){
     server.on("/restart", restart);
     server.on("/get_config", get_config);
@@ -1337,6 +1362,7 @@ void init_webserver(){
     server.on("/delete_all_users", HTTP_DELETE, del_all_users);
     server.on("/delete_all_events", HTTP_DELETE, del_all_events);
     server.on("/update", HTTP_POST, update, upload);
+    server.on("/generate_events", generate_events);
     server.begin();
     webserver_started = true;
 }
@@ -1539,7 +1565,9 @@ void stop_scanner(){
 }
 
 void start_qr_loop(){
+    esp_task_wdt_init(10, true);
     xTaskCreatePinnedToCore(qr_loop, "QRloop", 4096, NULL, 1, &qr_task, 0);
+    esp_task_wdt_add(qr_task);
 }
 
 int parse_command(const char *payload){
@@ -1637,7 +1665,6 @@ int parse_entry_event(const char *payload){
         player.play(7); 
         return 1;
     }
-    // stop_scanner();
     if (lat != -100 && lon -200 && rad != -1){
         double event_lat = event["lat"].as<double>();
         double event_lon = event["lon"].as<double>();
@@ -1655,16 +1682,14 @@ int parse_entry_event(const char *payload){
             Serial.printf("Location out of range: %d\r\n", distance);
             update_result("خارج از محدوده");
             player.play(6);
-            // start_scanner();
             return 1;
         }
     }
 
     int rc = insert_event(event["ts"].as<uint32_t>(), event["id"].as<uint16_t>(), event["st"].as<uint8_t>());
-    // start_scanner();
     if (rc == SQLITE_OK){
         Serial.print("User aproved\r\n");
-        char *name = (char*)malloc(55);
+        char *name = (char*)malloc(105);
         get_user_name(event["id"].as<uint16_t>(), name);
         update_result(name);
         player.play(8);
@@ -1673,6 +1698,8 @@ int parse_entry_event(const char *payload){
             lcd_delay(rly_on_time);
             digitalWrite(relay_pin, LOW);
         }
+        int name_delay = (strlen(name) - 17) * 200;
+        lcd_delay(rly_ctl_enabled ? max(name_delay - rly_on_time, 0) : max(name_delay, 0));
         return 0;
     }
     else if (rc == SQLITE_CONSTRAINT_FOREIGNKEY){
@@ -1738,7 +1765,10 @@ void setup(){
     init_time();
     init_player();
     init_qr_scanner();
-    xTaskCreatePinnedToCore(qr_loop, "QRloop", 4096, NULL, 1, &qr_task, 0);
+    // xTaskCreatePinnedToCore(qr_loop, "QRloop", 4096, NULL, 1, &qr_task, 0);
+    // esp_task_wdt_init(10, true);
+    // esp_task_wdt_add(qr_task);
+    start_qr_loop();
     Serial.printf("memory: %u - %u\r\n", ESP.getFreeHeap(), ESP.getFreePsram());
 }
 
@@ -1746,6 +1776,8 @@ void lcd_delay(uint32_t ms){
     uint32_t tm = millis();
     while(millis() - tm < ms){
         lv_timer_handler();
+        show_time();
+        esp_task_wdt_reset();
     }
 }
 
@@ -1764,7 +1796,6 @@ void qr_loop(void *parameter){
             lcd_delay(2000);
             start_scanner();
             while (reader.receiveQrCode(&qr_code_data, 1));
-            // lv_label_cut_text(result_label, 0, strlen(lv_label_get_text(result_label)));
             update_result("");
             update_status("Ready");
         }
@@ -1777,6 +1808,7 @@ void qr_loop(void *parameter){
             lv_label_set_text(ip_label, ip_label_text);
         }
         lv_timer_handler();
+        esp_task_wdt_reset();
     }
 }
 
